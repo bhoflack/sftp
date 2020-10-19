@@ -34,6 +34,7 @@ type Server struct {
 	openFiles     map[string]*os.File
 	openFilesLock sync.RWMutex
 	handleCount   int
+	vfs           Vfs
 }
 
 func (svr *Server) nextHandle(f *os.File) string {
@@ -86,6 +87,7 @@ func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error)
 		debugStream: ioutil.Discard,
 		pktMgr:      newPktMgr(svrConn),
 		openFiles:   make(map[string]*os.File),
+		vfs:         NewOsFs(),
 	}
 
 	for _, o := range options {
@@ -165,6 +167,7 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 }
 
 func handlePacket(s *Server, p orderedRequest) error {
+	vfs := s.vfs
 	var rpkt responsePacket
 	orderID := p.orderID()
 	switch p := p.requestPacket.(type) {
@@ -175,7 +178,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 		}
 	case *sshFxpStatPacket:
 		// stat the requested file
-		info, err := os.Stat(p.Path)
+		info, err := vfs.Stat(p.Path)
 		rpkt = sshFxpStatResponse{
 			ID:   p.ID,
 			info: info,
@@ -209,24 +212,24 @@ func handlePacket(s *Server, p orderedRequest) error {
 		}
 	case *sshFxpMkdirPacket:
 		// TODO FIXME: ignore flags field
-		err := os.Mkdir(p.Path, 0755)
+		err := vfs.Mkdir(p.Path, 0755)
 		rpkt = statusFromError(p, err)
 	case *sshFxpRmdirPacket:
-		err := os.Remove(p.Path)
+		err := vfs.Remove(p.Path)
 		rpkt = statusFromError(p, err)
 	case *sshFxpRemovePacket:
-		err := os.Remove(p.Filename)
+		err := vfs.Remove(p.Filename)
 		rpkt = statusFromError(p, err)
 	case *sshFxpRenamePacket:
-		err := os.Rename(p.Oldpath, p.Newpath)
+		err := vfs.Rename(p.Oldpath, p.Newpath)
 		rpkt = statusFromError(p, err)
 	case *sshFxpSymlinkPacket:
-		err := os.Symlink(p.Targetpath, p.Linkpath)
+		err := vfs.Symlink(p.Targetpath, p.Linkpath)
 		rpkt = statusFromError(p, err)
 	case *sshFxpClosePacket:
 		rpkt = statusFromError(p, s.closeHandle(p.Handle))
 	case *sshFxpReadlinkPacket:
-		f, err := os.Readlink(p.Path)
+		f, err := vfs.Readlink(p.Path)
 		rpkt = sshFxpNamePacket{
 			ID: p.ID,
 			NameAttrs: []sshFxpNameAttr{{
@@ -253,7 +256,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = statusFromError(p, err)
 		}
 	case *sshFxpOpendirPacket:
-		if stat, err := os.Stat(p.Path); err != nil {
+		if stat, err := vfs.Stat(p.Path); err != nil {
 			rpkt = statusFromError(p, err)
 		} else if !stat.IsDir() {
 			rpkt = statusFromError(p, &os.PathError{

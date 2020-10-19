@@ -1,4 +1,4 @@
-module github.com/pkg/sftp
+module github.com/bhoflack/sftp
 
 go 1.13
 

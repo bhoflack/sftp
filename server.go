@@ -131,6 +131,14 @@ func WithAllocator() ServerOption {
 	}
 }
 
+// WithVfs set the Vfs implementation.
+func WithVfs(vfs Vfs) ServerOption {
+	return func(s *Server) error {
+		s.vfs = vfs
+		return nil
+	}
+}
+
 type rxPacket struct {
 	pktType  fxp
 	pktBytes []byte
